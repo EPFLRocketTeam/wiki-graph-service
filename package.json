@@ -1,0 +1,32 @@
+{
+  "name": "wiki-graph-service",
+  "version": "0.1.0",
+  "description": "Backend service for EPFL Rocket Team Wiki.js: builds a page link graph (like Obsidian's graph view) and serves it to a button injected into the wiki via Head HTML Injection.",
+  "private": true,
+  "type": "commonjs",
+  "main": "dist/index.js",
+  "scripts": {
+    "dev": "ts-node-dev --respawn --transpile-only src/index.ts",
+    "build": "tsc -p tsconfig.json",
+    "start": "node dist/index.js",
+    "rebuild-graph": "ts-node --transpile-only src/scripts/rebuildOnce.ts",
+    "live-smoke": "ts-node --transpile-only src/scripts/liveSmoke.ts",
+    "find-string": "ts-node --transpile-only src/scripts/findString.ts"
+  },
+  "dependencies": {
+    "cors": "^2.8.5",
+    "dotenv": "^16.4.5",
+    "express": "^4.19.2",
+    "node-cron": "^3.0.3",
+    "p-limit": "^3.1.0"
+  },
+  "devDependencies": {
+    "@types/cors": "^2.8.17",
+    "@types/express": "^4.17.21",
+    "@types/node": "^20.14.9",
+    "@types/node-cron": "^3.0.11",
+    "ts-node": "^10.9.2",
+    "ts-node-dev": "^2.0.0",
+    "typescript": "^5.5.3"
+  }
+}
