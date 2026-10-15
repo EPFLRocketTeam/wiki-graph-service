@@ -167,39 +167,92 @@ export async function buildGraph(
   };
 }
 
+export interface LocalGraphOptions {
+  /** Max hops to traverse. Omit/null = no limit -- BFS runs until it
+   * naturally runs out of new pages to reach. This is the default: for a
+   * normal page with a handful of outgoing links, that just means "show
+   * everything downstream of this page" without the caller having to guess
+   * a depth. `maxNodes` below is what protects against a handful of true
+   * hub pages (e.g. the wiki's intro) blowing this up. */
+  depth?: number | null;
+  /** Which edges to follow while expanding the BFS frontier. Defaults to
+   * "out" -- Hugo (via Jordan) specifically asked for "all outgoing links
+   * from the page you're on", not backlinks. Kept configurable in case we
+   * want incoming/both again later. */
+  direction?: "out" | "in" | "both";
+  /** Safety cap on total node count. When hit, BFS stops expanding early
+   * and the result comes back with `truncated: true` so the frontend can
+   * tell the user to lower the depth manually instead of silently
+   * rendering a half-finished, misleading graph. */
+  maxNodes?: number;
+}
+
+const DEFAULT_MAX_NODES = 150;
+
+function neighborsOf(
+  graph: GraphData,
+  id: number,
+  direction: "out" | "in" | "both"
+): number[] {
+  switch (direction) {
+    case "out":
+      return graph.edgesOut[id] ?? [];
+    case "in":
+      return graph.edgesIn[id] ?? [];
+    case "both":
+      return [...(graph.edgesOut[id] ?? []), ...(graph.edgesIn[id] ?? [])];
+  }
+}
+
 /**
- * BFS out from `startId` over the union of outgoing + incoming edges, up to
- * `depth` hops -- this is the "local graph" view (like Obsidian's), not the
- * whole-wiki graph.
+ * BFS out from `startId`, by default following only outgoing links (the
+ * page's own links out, not who links to it) -- this is the "local graph"
+ * view (like Obsidian's), not the whole-wiki graph.
+ *
+ * The edge list in the result is NOT restricted to `direction`: it includes
+ * every edgesOut relationship between any two nodes that ended up in the
+ * visited set, regardless of which direction we traversed to reach them.
+ * That's deliberate -- if the reachable pages loop back on each other
+ * (A -> B -> C -> A), those edges still show up and the result reads as a
+ * web/mesh rather than a strict tree, without needing special-case logic
+ * for cycles.
  */
 export function localGraph(
   graph: GraphData,
   startId: number,
-  depth: number
-): { nodes: GraphNode[]; edges: { source: number; target: number }[] } {
+  options: LocalGraphOptions = {}
+): {
+  nodes: GraphNode[];
+  edges: { source: number; target: number }[];
+  truncated: boolean;
+} {
   if (!graph.nodes[startId]) {
-    return { nodes: [], edges: [] };
+    return { nodes: [], edges: [], truncated: false };
   }
+
+  const { depth = null, direction = "out", maxNodes = DEFAULT_MAX_NODES } = options;
 
   const visited = new Set<number>([startId]);
   let frontier = [startId];
+  let truncated = false;
+  let hop = 0;
 
-  for (let hop = 0; hop < depth; hop++) {
+  while (frontier.length > 0 && (depth === null || hop < depth) && !truncated) {
     const next: number[] = [];
     for (const id of frontier) {
-      const neighbors = [
-        ...(graph.edgesOut[id] ?? []),
-        ...(graph.edgesIn[id] ?? []),
-      ];
-      for (const n of neighbors) {
-        if (!visited.has(n)) {
-          visited.add(n);
-          next.push(n);
+      if (truncated) break;
+      for (const n of neighborsOf(graph, id, direction)) {
+        if (visited.has(n)) continue;
+        if (visited.size >= maxNodes) {
+          truncated = true;
+          break;
         }
+        visited.add(n);
+        next.push(n);
       }
     }
     frontier = next;
-    if (frontier.length === 0) break;
+    hop++;
   }
 
   const edgesSeen = new Set<string>();
@@ -218,5 +271,5 @@ export function localGraph(
     .map((id) => graph.nodes[id])
     .filter((n): n is GraphNode => Boolean(n));
 
-  return { nodes, edges };
+  return { nodes, edges, truncated };
 }
